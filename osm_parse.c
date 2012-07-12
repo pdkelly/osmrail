@@ -412,28 +412,41 @@ static void read_string(char *dest, char **ptr)
  */
 static char deescape_xml(char **str)
 {
-    switch(*(*str))
+    switch(**str)
     {
         case 'a':
             switch(*(*str+1))
             {
                 case 'm': /* &amp; */
-                    (*str) += 4;
+                    *str += 4;
                     return '&';
                 case 'p': /* &apos; */
-                    (*str) += 5;
+                    *str += 5;
                     return '\'';
             }
         case 'g': /* &gt; */
-            (*str) += 3;
+            *str += 3;
             return '>';
         case 'l': /* &lt; */
-            (*str) += 3;
+            *str += 3;
             return '<';
         case 'q': /* &quot; */
-            (*str) += 5;
+            *str += 5;
             return '\"';
-        default: /* unrecognised; don't deescape */
+        case '#': /* numeric encoding */
+        {
+            char *next;
+            int c = strtol(*str+1, &next, 10);
+
+            /* In future this could be extended to decode non-ASCII characters
+             * into the proper UTF-8 sequence. */
+            if(c >= 0x20 && c < 0x7f && *next == ';') /* ASCII printable */
+            {
+                *str = next+1;
+                return c;
+            }
+        }
+        default: /* unrecognised or non-ASCII character; don't deescape */
             return '&';
     }
 }

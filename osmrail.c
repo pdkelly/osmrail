@@ -40,7 +40,7 @@ struct osm_params
 };
 
 static int parse_entire_file(char *filename, osm_node_callback_t *, osm_way_callback_t *, 
-			     osm_relation_callback_t *, void *);
+                             osm_relation_callback_t *, void *);
 static osm_node_callback_t     load_node, output_node;
 static osm_way_callback_t      load_way_1, load_way_2, output_way;
 static osm_relation_callback_t load_relation, output_relation;
@@ -98,7 +98,7 @@ int main(int argc, char **argv)
 }
 
 static int parse_entire_file(char *filename, osm_node_callback_t *cb_node, 
-		      osm_way_callback_t *cb_way, osm_relation_callback_t *cb_relation, void *data)
+                      osm_way_callback_t *cb_way, osm_relation_callback_t *cb_relation, void *data)
 {
     struct osm_planet *osf;
     struct osm_parse *parse;
@@ -367,13 +367,12 @@ static void print_xml(char *str)
 {
     int c;
 
-    while((c = *str++))
+    while((c = *(unsigned char *)str++))
     {
-        switch(c)
+        if(c < 0x20 || c == 0x7f) /* ASCII non-printable */
+            printf("&#%d;", c);
+        else switch(c)
         {
-            case '\'':
-                printf("&apos;");
-                break;
             case '"':
                 printf("&quot;");
                 break;
