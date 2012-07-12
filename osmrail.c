@@ -39,28 +39,16 @@ struct osm_params
     int max[3];
 };
 
-static osm_node_callback_t load_node, output_node;
-static osm_way_callback_t load_way_1, load_way_2, output_way;
+static int parse_entire_file(char *filename, osm_node_callback_t *, osm_way_callback_t *, 
+			     osm_relation_callback_t *, void *);
+static osm_node_callback_t     load_node, output_node;
+static osm_way_callback_t      load_way_1, load_way_2, output_way;
 static osm_relation_callback_t load_relation, output_relation;
-
-static int check_tags(struct osm_tag *, int tag_count, struct osm_params *);
-static void ensure_capacity(struct osm_params *, int ele_type, int count);
-static void print_tags(struct osm_tag *, int tag_count);
-static void print_xml(char *);
-
-static int cmp_id(const void *a, const void *b)
-{
-    unsigned int aa = *(unsigned int *)a, bb = *(unsigned int *)b;
-
-    return (int)aa - bb;
-}
+static void sort_ids(struct osm_params *, int ele);
 
 int main(int argc, char **argv)
 {
     struct osm_params *osm = calloc(1, sizeof(struct osm_params));
-    struct osm_planet *osf;
-    struct osm_parse *parse;
-    int ele;
 
     if(argc != 2)
     {
@@ -68,6 +56,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* Define tags of interest. In future these could be specified on standard input. */
     osm->tag_count = 2;
     osm->tags = malloc(osm->tag_count * sizeof(struct osm_tag));
     strcpy(osm->tags[0].key, "railway");
@@ -78,127 +67,61 @@ int main(int argc, char **argv)
     /* First pass. Read all node, way and relation IDs, and IDs of
      * all ways referenced in relations. */
     fprintf(stderr, "First pass...\n");
-    if( !(osf = osm_planet_open(argv[1])))
-    {
-        fprintf(stderr, "Unable to open file <%s>\n", argv[1]);
+    if( !parse_entire_file(argv[1], load_node, load_way_1, load_relation, osm))
         return 1;
-    }
-
-    if( !(parse = osm_parse_init(load_node, load_way_1, load_relation, osm)))
-    {
-        fprintf(stderr, "Unable to initialise OSM parser\n");
-        return 1;
-    }
-
-    while(1)
-    {
-        char *recvbuff;
-        int ret = osm_planet_readln(osf, &recvbuff);
-
-        if(ret == 1) /* error */
-            return -1;
-
-        /* Stop reading when either EOF or logical end of data occurs,
-         * whichever is sooner */
-        if( ret == 2 /* EOF */
-         || osm_parse_ingest(parse, recvbuff) == 1)
-            break;
-    }
-
-    if(osm_planet_close(osf) != 0)
-        return -1;
-    osm_parse_destroy(parse);
 
     /* Relation and way lists are complete after first pass. Sort,
      * remove duplicates and resize. */
-    for(ele = OSM_WAY; ele < OSM_RELATION; ele++)
-    {
-        int curr, prev = 0;
-
-        qsort(osm->ids[ele], osm->count[ele], sizeof(unsigned int), cmp_id);
-        for(curr = 1; curr < osm->count[ele]; curr++)
-        {
-            if(osm->ids[ele][curr] != osm->ids[ele][prev])
-                osm->ids[ele][++prev] = osm->ids[ele][curr];
-        }
-        osm->count[ele] = prev + 1;
-        osm->ids[ele] = realloc(osm->ids[ele], osm->count[ele] * sizeof(unsigned int));
-    }
+    sort_ids(osm, OSM_WAY);
+    sort_ids(osm, OSM_RELATION);
 
     /* Second pass. Read IDs of all nodes referenced in ways. */
     fprintf(stderr, "Second pass...\n");
-    if( !(osf = osm_planet_open(argv[1])))
-    {
-        fprintf(stderr, "Unable to open file <%s>\n", argv[1]);
+    if( !parse_entire_file(argv[1], NULL, load_way_2, NULL, osm))
         return 1;
-    }
-
-    if( !(parse = osm_parse_init(NULL, load_way_2, NULL, osm)))
-    {
-        fprintf(stderr, "Unable to initialise OSM parser\n");
-        return 1;
-    }
-
-    while(1)
-    {
-        char *recvbuff;
-        int ret = osm_planet_readln(osf, &recvbuff);
-
-        if(ret == 1) /* error */
-            return -1;
-
-        /* Stop reading when either EOF or logical end of data occurs,
-         * whichever is sooner */
-        if( ret == 2 /* EOF */
-         || osm_parse_ingest(parse, recvbuff) == 1)
-            break;
-    }
-
-    if(osm_planet_close(osf) != 0)
-        return -1;
-    osm_parse_destroy(parse);
 
     /* Node list is now complete. Sort, remove duplicates and resize. */
-    {
-        int curr, prev = 0;
-
-        qsort(osm->ids[OSM_NODE], osm->count[OSM_NODE], sizeof(unsigned int), cmp_id);
-        for(curr = 1; curr < osm->count[OSM_NODE]; curr++)
-        {
-            if(osm->ids[OSM_NODE][curr] != osm->ids[OSM_NODE][prev])
-                osm->ids[OSM_NODE][++prev] = osm->ids[OSM_NODE][curr];
-        }
-        osm->count[OSM_NODE] = prev + 1;
-        osm->ids[OSM_NODE] = realloc(osm->ids[OSM_NODE], osm->count[OSM_NODE] * sizeof(unsigned int));
-    }
+    sort_ids(osm, OSM_NODE);
 
     fprintf(stderr, "Finished loading.\nElements of interest:\nNodes:\t%d\n Ways:\t%d\n Relations:\t%d\n",
             osm->count[OSM_NODE], osm->count[OSM_WAY], osm->count[OSM_RELATION]);
-
    
-    /* Second pass. Read IDs of all nodes referenced in ways. */
+    /* Third pass. Output all interesting nodes, ways and relations. */
     fprintf(stderr, "Third pass...\n");
-    if( !(osf = osm_planet_open(argv[1])))
-    {
-        fprintf(stderr, "Unable to open file <%s>\n", argv[1]);
-        return 1;
-    }
-
-    if( !(parse = osm_parse_init(output_node, output_way, output_relation, osm)))
-    {
-        fprintf(stderr, "Unable to initialise OSM parser\n");
-        return 1;
-    }
-
     printf("<?xml version='1.0' encoding='UTF-8'?>\n");
     printf("<osm version=\"0.6\" generator=\"osmrail by Paul Kelly\">\n");
+    if( !parse_entire_file(argv[1], output_node, output_way, output_relation, osm))
+        return 1;
+    printf("</osm>\n");
+
+    return 0;
+}
+
+static int parse_entire_file(char *filename, osm_node_callback_t *cb_node, 
+		      osm_way_callback_t *cb_way, osm_relation_callback_t *cb_relation, void *data)
+{
+    struct osm_planet *osf;
+    struct osm_parse *parse;
+
+    if( !(osf = osm_planet_open(filename)))
+    {
+        fprintf(stderr, "Unable to open file <%s>\n", filename);
+        return 0;
+    }
+
+    if( !(parse = osm_parse_init(cb_node, cb_way, cb_relation, data)))
+    {
+        fprintf(stderr, "Unable to initialise OSM parser\n");
+        return 0;
+    }
+
     while(1)
     {
         char *recvbuff;
         int ret = osm_planet_readln(osf, &recvbuff);
 
         if(ret == 1) /* error */
-            return -1;
+            return 0;
 
         /* Stop reading when either EOF or logical end of data occurs,
          * whichever is sooner */
@@ -206,13 +129,22 @@ int main(int argc, char **argv)
          || osm_parse_ingest(parse, recvbuff) == 1)
             break;
     }
-    printf("</osm>\n");
 
     if(osm_planet_close(osf) != 0)
-        return -1;
+        return 0;
     osm_parse_destroy(parse);
 
-    return 0;
+    return 1;
+}
+
+static int check_tags(struct osm_tag *, int tag_count, struct osm_params *);
+static void ensure_capacity(struct osm_params *, int ele_type, int count);
+
+static int cmp_id(const void *a, const void *b)
+{
+    unsigned int aa = *(unsigned int *)a, bb = *(unsigned int *)b;
+
+    return (int)aa - bb;
 }
 
 /* Callback function called by osm_parse_ingest() every time a new node has
@@ -319,6 +251,25 @@ static void ensure_capacity(struct osm_params *osm, int ele, int count)
 
     return;
 }
+
+static void sort_ids(struct osm_params *osm, int ele)
+{
+    int curr, prev = 0;
+
+    qsort(osm->ids[ele], osm->count[ele], sizeof(unsigned int), cmp_id);
+    for(curr = 1; curr < osm->count[ele]; curr++)
+    {
+        if(osm->ids[ele][curr] != osm->ids[ele][prev])
+            osm->ids[ele][++prev] = osm->ids[ele][curr];
+    }
+    osm->count[ele] = prev + 1;
+    osm->ids[ele] = realloc(osm->ids[ele], osm->count[ele] * sizeof(unsigned int));
+
+    return;
+}
+
+static void print_tags(struct osm_tag *, int tag_count);
+static void print_xml(char *);
 
 static void output_node(struct osm_node *node, void *data)
 {
