@@ -1,0 +1,54 @@
+ * osmrail - OpenStreetMap filter for railway-related features
+ * Copyright (C) 2011 Paul D Kelly
+
+Version 0.1, 3 July 2011
+
+Synopsis:
+This program can be used to extract all railway-related features from
+an OpenStreetMap XML file ("planet dump") that has been compressed
+with bzip2 compression. Currently extracted are:
+ * Any features that have a tag with a key of "railway"
+ * Any features that have a tag with a key "route" and value "train"
+ 
+Operation:
+The name of the bzip2-compressed planet dump should be provided as a
+command-line argument. The filtered data will be written to standard
+output and is uncompressed (it may be re-compressed if desired by
+piping through bzip2).
+
+All information regarding feature version, timestamp, most recent
+edit, etc. is stripped and only the most basic information required
+for use of the data is retained in the output. This includes:
+For nodes: ID, latitude and longitude, and all tags.
+For ways: ID, all member nodes, and all tags.
+For relations: ID, all member nodes and ways and their roles, and all
+tags.
+
+Example command-line usage:
+./osmrail great_britain.osm.bz2 > great_britain_rail.osm
+
+Build Instructions:
+There is a single mandatory dependency of the libbzip2 library, which
+can be obtained from http://bzip.org/ if necessary.
+There is no configure script and the program is compiled simply by
+running 'make' in the source directory.
+It can be installed if necessary (the default location is in
+/usr/local/bin) by running 'sudo make install'.
+
+Technical Details:
+The program makes three passes of the input file.
+In the first pass, a list of all nodes, ways and relations that have
+tags matching the railway data filter is saved, together with a list
+of all member nodes and ways of any matching relations.
+In the second pass, the list of nodes is extended to include all nodes
+that are referenced by any matching ways.
+In the third and final pass, details of all nodes, ways and relations
+that have previously determined to match the filter are printed to
+standard output.
+This three-pass mode of operation ensures the memory requirements for
+the program are very modest and that it can easily operate on massive
+input files.
+
+--
+paul@stjohnspoint.co.uk
+Berlin, July 2011
