@@ -49,6 +49,10 @@ This three-pass mode of operation ensures the memory requirements for
 the program are very modest and that it can easily operate on massive
 input files.
 
+TODO: Nested relations are not currently handled. This should be fixed
+- the most obvious solution is to extend the multi-pass approach to
+require even more passes.
+
 --
 paul@stjohnspoint.co.uk
 Berlin, July 2011
